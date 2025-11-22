@@ -4047,6 +4047,10 @@ ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS connector_request_reference
 -- Your SQL goes here
 ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS merchant_country_code Varchar(32);
 
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS dispute_polling_interval INTEGER;
+ALTER TYPE "DisputeStage" ADD VALUE 'arbitration';
+AlTER TYPE "DisputeStage" ADD VALUE 'dispute_reversal';
+
 CREATE TABLE hyperswitch_ai_interaction (
     id VARCHAR(64) NOT NULL,
     session_id VARCHAR(64),
