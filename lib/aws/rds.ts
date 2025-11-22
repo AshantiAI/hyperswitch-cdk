@@ -150,7 +150,7 @@ def lambda_handler(event, context):
         # Call the upload_file_from_url function to upload two files to S3
         if event['RequestType'] == 'Create':
           upload_file_from_url("https://raw.githubusercontent.com/juspay/hyperswitch-cdk/main/lib/aws/migrations/migration_runner.zip", "hyperswitch-schema-${process.env.CDK_DEFAULT_ACCOUNT}-${process.env.CDK_DEFAULT_REGION}", "migration_runner.zip")
-          upload_file_from_url("https://raw.githubusercontent.com/juspay/hyperswitch-cdk/main/lib/aws/migrations/v1.107.0/schema.sql", "hyperswitch-schema-${process.env.CDK_DEFAULT_ACCOUNT}-${process.env.CDK_DEFAULT_REGION}", "schema.sql")
+          upload_file_from_url("https://raw.githubusercontent.com/AshantiAI/hyperswitch-cdk/main/lib/aws/migrations/v1.119.0/schema.sql", "hyperswitch-schema-${process.env.CDK_DEFAULT_ACCOUNT}-${process.env.CDK_DEFAULT_REGION}", "schema.sql")
           upload_file_from_url("https://raw.githubusercontent.com/juspay/hyperswitch-cdk/main/lib/aws/migrations/locker-schema.sql", "hyperswitch-schema-${process.env.CDK_DEFAULT_ACCOUNT}-${process.env.CDK_DEFAULT_REGION}", "locker-schema.sql")
           send(event, context, SUCCESS, { "message" : "Files uploaded successfully"})
         else:
@@ -267,7 +267,7 @@ def lambda_handler(event, context):
             }),
           ],
         vpc,
-        vpcSubnets: { subnetGroupName: "database-zone"},
+        vpcSubnets: { subnetGroupName: "database-zone" },
         engine,
         storageEncrypted: true,
         port: rds_config.port,
