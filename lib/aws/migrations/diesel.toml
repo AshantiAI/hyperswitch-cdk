@@ -1,0 +1,6 @@
+# Diesel configuration for Lambda migrations
+# Removed print_schema section since schema generation is not needed for running migrations
+# and Lambda file system is read-only except for /tmp
+
+[migrations_directory]
+dir = "migrations"

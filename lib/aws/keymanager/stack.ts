@@ -1,6 +1,5 @@
 import * as cdk from "aws-cdk-lib";
-import { IVpc, InstanceType, SecurityGroup } from "aws-cdk-lib/aws-ec2";
-import { Vpc, SubnetNames } from "../networking";
+import { SecurityGroup } from "aws-cdk-lib/aws-ec2";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -223,7 +222,7 @@ export class Keymanager extends Construct {
                             port: 5432,
                             username: config.db_user,
                             password: kmsSecrets.kms_encrypted_db_pass,
-                            plainpassword: config.db_pass, 
+                            plainpassword: config.db_pass,
                             database: "encryption_db",
                         }
                     }

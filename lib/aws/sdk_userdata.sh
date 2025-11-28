@@ -17,7 +17,7 @@ hyperswitch_client_url=http://{{sdk_cloudfront_url}}
 
 cd /
 # pull the compiled Hyperswitch SDK
-sudo curl https://raw.githubusercontent.com/juspay/hyperswitch-cdk/refs/heads/main/single-click/data.zip --output data.zip
+sudo curl https://raw.githubusercontent.com/AshantiAI/hyperswitch-cdk/refs/heads/main/single-click/data.zip --output data.zip
 sudo unzip -o data.zip
 
 # Replace the backend_url and hyperswitch_client_url in the SDK
@@ -54,21 +54,22 @@ export HYPERSWITCH_SECRET_KEY=$(curl --silent --location --request POST 'https:/
   --header 'api-key: '{{admin_api_key}} \
   --data-raw '{"name":"API Key 1","description":null,"expiration":"2038-01-19T03:14:08.000Z"}' | jq -r '.api_key')
 
-export CONNECTOR_KEY=$(curl --silent --location --request POST 'https://{{app_cloudfront_url}}/account/'$MERCHANT_ID'/connectors' \
-  --header 'Content-Type: application/json' \
-  --header 'Accept: application/json' \
-  --header 'api-key: '{{admin_api_key}} \
-  --data-raw '{"connector_type":"fiz_operations","connector_name":"stripe_test","connector_account_details":{"auth_type":"HeaderKey","api_key":"test_key"},"test_mode":true,"disabled":false,"payment_methods_enabled":[{"payment_method":"card","payment_method_types":[{"payment_method_type":"credit","card_networks":["Visa","Mastercard"],"minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true},{"payment_method_type":"debit","card_networks":["Visa","Mastercard"],"minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true}]},{"payment_method":"pay_later","payment_method_types":[{"payment_method_type":"klarna","payment_experience":"redirect_to_url","minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true},{"payment_method_type":"affirm","payment_experience":"redirect_to_url","minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true},{"payment_method_type":"afterpay_clearpay","payment_experience":"redirect_to_url","minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true}]}],"metadata":{"city":"NY","unit":"245"},"connector_webhook_details":{"merchant_secret":"MyWebhookSecret"}}' )
+# export CONNECTOR_KEY=$(curl --silent --location --request POST 'https://{{app_cloudfront_url}}/account/'$MERCHANT_ID'/connectors' \
+#   --header 'Content-Type: application/json' \
+#   --header 'Accept: application/json' \
+#   --header 'api-key: '{{admin_api_key}} \
+#   --data-raw '{"connector_type":"fiz_operations","connector_name":"stripe_test","connector_account_details":{"auth_type":"HeaderKey","api_key":"test_key"},"test_mode":true,"disabled":false,"payment_methods_enabled":[{"payment_method":"card","payment_method_types":[{"payment_method_type":"credit","card_networks":["Visa","Mastercard"],"minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true},{"payment_method_type":"debit","card_networks":["Visa","Mastercard"],"minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true}]},{"payment_method":"pay_later","payment_method_types":[{"payment_method_type":"klarna","payment_experience":"redirect_to_url","minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true},{"payment_method_type":"affirm","payment_experience":"redirect_to_url","minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true},{"payment_method_type":"afterpay_clearpay","payment_experience":"redirect_to_url","minimum_amount":1,"maximum_amount":68607706,"recurring_enabled":true,"installment_payment_enabled":true}]}],"metadata":{"city":"NY","unit":"245"},"connector_webhook_details":{"merchant_secret":"MyWebhookSecret"}}' )
 
 
 cat << EOF >> .env
-MERCHANT_ID=$MERCHANT_ID
+# MERCHANT_ID=$MERCHANT_ID
 HYPERSWITCH_PUBLISHABLE_KEY=$HYPERSWITCH_PUBLISHABLE_KEY
 HYPERSWITCH_SECRET_KEY=$HYPERSWITCH_SECRET_KEY
-CONNECTOR_KEY=$CONNECTOR_KEY
+# CONNECTOR_KEY=$CONNECTOR_KEY
 HYPERSWITCH_SERVER_URL=https://{{app_cloudfront_url}}
-HYPERSWITCH_CLIENT_URL=https://{{sdk_cloudfront_url}}/0.27.2/v0
+HYPERSWITCH_CLIENT_URL=https://{{sdk_cloudfront_url}}/{{version}}/{{sub_version}}
+SELF_SERVER_URL=http://localhost:9000/
 EOF
 
-docker pull juspaydotin/hyperswitch-web:v1.0.12
-docker run -d --env-file .env -p 5252:5252 juspaydotin/hyperswitch-web:v1.0.12
+docker pull juspaydotin/hyperswitch-web:v0.127.0
+docker run -d --env-file .env -p 5252:5252 juspaydotin/hyperswitch-web:v0.127.0

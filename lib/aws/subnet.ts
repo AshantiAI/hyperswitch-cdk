@@ -3,7 +3,7 @@ import { Construct } from 'constructs';
 import { Config } from './config';
 
 export class SubnetStack {
-    constructor(scope: Construct , vpc: ec2.Vpc, config: Config) {
+    constructor(scope: Construct, vpc: ec2.Vpc, config: Config) {
         config.extra_subnets.forEach((subnetConfig) => {
             const subnet = new ec2.Subnet(scope, subnetConfig.id, {
                 vpcId: vpc.vpcId,

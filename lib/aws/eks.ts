@@ -875,7 +875,7 @@ export class EksStack {
           externalPostgresql: {
             enabled: true,
             primary: {
-              host: rds.dbCluster?.clusterEndpoint.hostname,
+              host: rds.db.instanceEndpoint.hostname,
               auth: {
                 username: "db_user",
                 database: "hyperswitch",
@@ -884,7 +884,7 @@ export class EksStack {
               },
             },
             readOnly: {
-              host: rds.dbCluster?.clusterReadEndpoint.hostname,
+              host: rds.db.instanceEndpoint.hostname,
               auth: {
                 username: "db_user",
                 database: "hyperswitch",

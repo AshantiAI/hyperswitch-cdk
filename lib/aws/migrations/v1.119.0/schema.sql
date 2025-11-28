@@ -4047,10 +4047,1182 @@ ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS connector_request_reference
 -- Your SQL goes here
 ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS merchant_country_code Varchar(32);
 
+/*******************************************************************
+ * FROM v1.107.0 TO v1.119.0 
+ * git diff --name-only v1.107.0..v1.119.0 migrations/**/up.sql | \
+ * sort | \
+ * xargs awk 1 > ./lib/aws/migrations/v1.119.0/schema.sql
+ *******************************************************************/
+
+CREATE TABLE IF NOT EXISTS authentication (
+    authentication_id VARCHAR(64) NOT NULL,
+    merchant_id VARCHAR(64) NOT NULL,
+    authentication_connector VARCHAR(64) NOT NULL,
+    connector_authentication_id VARCHAR(64),
+    authentication_data JSONB,
+    payment_method_id VARCHAR(64) NOT NULL,
+    authentication_type VARCHAR(64),
+    authentication_status VARCHAR(64) NOT NULL,
+    authentication_lifecycle_status VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+    modified_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+    error_message VARCHAR(64),
+    error_code VARCHAR(64),
+    PRIMARY KEY (authentication_id)
+);
+-- Your SQL goes here
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS external_three_ds_authentication_attempted BOOLEAN default false,
+ADD COLUMN IF NOT EXISTS authentication_connector VARCHAR(64),
+ADD COLUMN IF NOT EXISTS authentication_id VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS request_external_three_ds_authentication BOOLEAN;
+-- Your SQL goes here
+ALTER TYPE "ConnectorType" ADD VALUE IF NOT EXISTS 'authentication_processor';
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN IF NOT EXISTS connector_metadata JSONB DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS payment_method_billing_address_id VARCHAR(64);
+-- Your SQL goes here
+ALTER TYPE "PaymentSource" ADD VALUE 'webhook';
+ALTER TYPE "PaymentSource" ADD VALUE 'external_authenticator';
+ALTER TABLE
+  PAYOUTS
+ADD
+  COLUMN profile_id VARCHAR(64);
+
+UPDATE
+  PAYOUTS AS PO
+SET
+  profile_id = POA.profile_id
+FROM
+  PAYOUT_ATTEMPT AS POA
+WHERE
+  PO.payout_id = POA.payout_id;
+
+ALTER TABLE
+  PAYOUTS
+ALTER COLUMN
+  profile_id
+SET
+  NOT NULL;
+
+ALTER TABLE
+  PAYOUTS
+ADD
+  COLUMN status "PayoutStatus";
+
+UPDATE
+  PAYOUTS AS PO
+SET
+  status = POA.status
+FROM
+  PAYOUT_ATTEMPT AS POA
+WHERE
+  PO.payout_id = POA.payout_id;
+
+ALTER TABLE
+  PAYOUTS
+ALTER COLUMN
+  status
+SET
+  NOT NULL;
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS authentication_connector_details JSONB NULL;
+-- The following queries must be run before the newer version of the application is deployed.
+ALTER TABLE events
+    ADD COLUMN merchant_id VARCHAR(64) DEFAULT NULL,
+    ADD COLUMN business_profile_id VARCHAR(64) DEFAULT NULL,
+    ADD COLUMN primary_object_created_at TIMESTAMP DEFAULT NULL,
+    ADD COLUMN idempotent_event_id VARCHAR(64) DEFAULT NULL,
+    ADD COLUMN initial_attempt_id VARCHAR(64) DEFAULT NULL,
+    ADD COLUMN request BYTEA DEFAULT NULL,
+    ADD COLUMN response BYTEA DEFAULT NULL;
+
+UPDATE events
+SET idempotent_event_id = event_id
+WHERE idempotent_event_id IS NULL;
+
+UPDATE events
+SET initial_attempt_id = event_id
+WHERE initial_attempt_id IS NULL;
+
+ALTER TABLE events
+ADD CONSTRAINT idempotent_event_id_unique UNIQUE (idempotent_event_id);
+
+-- The following queries must be run after the newer version of the application is deployed.
+-- Running these queries can even be deferred for some time (a couple of weeks or even a month) until the
+-- new version being deployed is considered stable.
+-- Make `event_id` primary key instead of `id`
+ALTER TABLE events DROP CONSTRAINT events_pkey;
+
+ALTER TABLE events
+ADD PRIMARY KEY (event_id);
+
+ALTER TABLE events DROP CONSTRAINT event_id_unique;
+
+-- Dropping unused columns
+ALTER TABLE events
+    DROP COLUMN id,
+    DROP COLUMN intent_reference_id;
+-- Your SQL goes here
+
+ALTER TABLE payment_methods ADD COLUMN network_transaction_id VARCHAR(255) DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE authentication
+ADD COLUMN IF NOT EXISTS maximum_supported_version JSONB,
+ADD COLUMN IF NOT EXISTS threeds_server_transaction_id VARCHAR(64),
+ADD COLUMN IF NOT EXISTS cavv VARCHAR(64),
+ADD COLUMN IF NOT EXISTS authentication_flow_type VARCHAR(64),
+ADD COLUMN IF NOT EXISTS message_version JSONB,
+ADD COLUMN IF NOT EXISTS eci VARCHAR(64),
+ADD COLUMN IF NOT EXISTS trans_status VARCHAR(64),
+ADD COLUMN IF NOT EXISTS acquirer_bin VARCHAR(64),
+ADD COLUMN IF NOT EXISTS acquirer_merchant_id VARCHAR(64),
+ADD COLUMN IF NOT EXISTS three_ds_method_data VARCHAR,
+ADD COLUMN IF NOT EXISTS three_ds_method_url VARCHAR,
+ADD COLUMN IF NOT EXISTS acs_url VARCHAR,
+ADD COLUMN IF NOT EXISTS challenge_request VARCHAR,
+ADD COLUMN IF NOT EXISTS acs_reference_number VARCHAR,
+ADD COLUMN IF NOT EXISTS acs_trans_id VARCHAR,
+ADD COLUMN IF NOT EXISTS three_dsserver_trans_id VARCHAR,
+ADD COLUMN IF NOT EXISTS acs_signed_content VARCHAR,
+ADD COLUMN IF NOT EXISTS connector_metadata JSONB;
+-- Your SQL goes here
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS client_secret VARCHAR(128) DEFAULT NULL;
+ALTER TABLE payment_methods ALTER COLUMN payment_method DROP NOT NULL;
+CREATE UNIQUE INDEX events_merchant_id_event_id_index ON events (merchant_id, event_id);
+
+CREATE INDEX events_merchant_id_initial_attempt_id_index ON events (merchant_id, initial_attempt_id);
+
+CREATE INDEX events_merchant_id_initial_events_index ON events (merchant_id, (event_id = initial_attempt_id));
+
+CREATE INDEX events_business_profile_id_initial_attempt_id_index ON events (business_profile_id, initial_attempt_id);
+
+CREATE INDEX events_business_profile_id_initial_events_index ON events (
+    business_profile_id,
+    (event_id = initial_attempt_id)
+);
+
+CREATE TYPE "WebhookDeliveryAttempt" AS ENUM (
+    'initial_attempt',
+    'automatic_retry',
+    'manual_retry'
+);
+
+ALTER TABLE events
+ADD COLUMN delivery_attempt "WebhookDeliveryAttempt" DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN profile_id VARCHAR(64) NOT NULL;
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN payment_id VARCHAR(255);
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS confirm bool;
+ALTER TYPE "PayoutStatus" ADD VALUE IF NOT EXISTS 'requires_vendor_account_creation';
+-- Your SQL goes here
+ALTER TYPE "DashboardMetadata"
+ADD VALUE IF NOT EXISTS 'onboarding_survey';
+-- Your SQL goes here
+ALTER TABLE merchant_connector_account ADD COLUMN IF NOT EXISTS additional_merchant_data BYTEA DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN merchant_connector_id VARCHAR(128) NOT NULL;
+CREATE TYPE "GenericLinkType" as ENUM(
+    'payment_method_collect',
+    'payout_link'
+);
+
+CREATE TABLE generic_link (
+  link_id VARCHAR (64) NOT NULL PRIMARY KEY,
+  primary_reference VARCHAR (64) NOT NULL,
+  merchant_id VARCHAR (64) NOT NULL,
+  created_at timestamp NOT NULL DEFAULT NOW():: timestamp,
+  last_modified_at timestamp NOT NULL DEFAULT NOW():: timestamp,
+  expiry timestamp NOT NULL,
+  link_data JSONB NOT NULL,
+  link_status JSONB NOT NULL,
+  link_type "GenericLinkType" NOT NULL,
+  url TEXT NOT NULL,
+  return_url TEXT NULL
+);
+ALTER TABLE merchant_account
+ADD COLUMN IF NOT EXISTS pm_collect_link_config JSONB NULL;
+
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS payout_link_config JSONB NULL;
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_extended_card_info_enabled BOOLEAN DEFAULT FALSE;
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS extended_card_info_config JSONB DEFAULT NULL;
+ALTER TABLE fraud_check 
+ADD COLUMN IF NOT EXISTS payment_capture_method "CaptureMethod" NULL;
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_connector_agnostic_mit_enabled BOOLEAN DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE authentication ALTER COLUMN error_message TYPE TEXT;
+-- Your SQL goes here
+ALTER TABLE payment_methods
+ADD COLUMN IF NOT EXISTS payment_method_billing_address BYTEA;
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS use_billing_as_payment_method_billing BOOLEAN DEFAULT TRUE;
+-- Your SQL goes here
+CREATE TABLE IF NOT EXISTS user_key_store (
+    user_id VARCHAR(64) PRIMARY KEY,
+    key bytea NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS charges jsonb;
+
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS charge_id VARCHAR(64);
+
+ALTER TABLE refund ADD COLUMN IF NOT EXISTS charges jsonb;
+-- Your SQL goes here
+CREATE TYPE "TotpStatus" AS ENUM (
+  'set',
+  'in_progress',
+  'not_set'
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_status "TotpStatus" DEFAULT 'not_set' NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret bytea DEFAULT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery_codes TEXT[] DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_password_modified_at TIMESTAMP;
+-- Your SQL goes here
+ALTER TABLE authentication DROP COLUMN three_dsserver_trans_id;
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS collect_shipping_details_from_wallet_connector BOOLEAN DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS frm_metadata JSONB DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS updated_by VARCHAR(64);
+
+ALTER TABLE mandate ADD COLUMN IF NOT EXISTS updated_by VARCHAR(64);
+
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_by VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS client_source VARCHAR(64) DEFAULT NULL;
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS client_version VARCHAR(64) DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payout_attempt ALTER COLUMN connector_payout_id DROP NOT NULL;
+
+UPDATE payout_attempt SET connector_payout_id = NULL WHERE connector_payout_id = '';
+-- Your SQL goes here
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_success';
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_failed';
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_processing';
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_cancelled';
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_initiated';
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_expired';
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payout_reversed';
+
+ALTER TYPE "EventObjectType" ADD VALUE IF NOT EXISTS 'payout_details';
+
+ALTER TYPE "EventClass" ADD VALUE IF NOT EXISTS 'payouts';
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN IF NOT EXISTS ds_trans_id VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN IF NOT EXISTS directory_server_id VARCHAR(128);
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'AOA';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'BAM';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'BGN';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'BYN';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'CVE';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'FKP';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'GEL';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'IQD';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'LYD';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'MRU';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'MZN';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'PAB';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'RSD';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'SBD';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'SHP';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'SLE';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'SRD';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'STN';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'TND';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'TOP';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'UAH';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'VES';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'WST';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'XCD';
+ALTER TYPE "Currency" ADD VALUE IF NOT EXISTS 'ZMW';
+-- Your SQL goes here
+ALTER TYPE "PayoutStatus" ADD VALUE IF NOT EXISTS 'initiated';
+ALTER TYPE "PayoutStatus" ADD VALUE IF NOT EXISTS 'expired';
+ALTER TYPE "PayoutStatus" ADD VALUE IF NOT EXISTS 'reversed';
+-- Your SQL goes here
+ALTER TABLE merchant_connector_account ADD COLUMN IF NOT EXISTS connector_wallets_details BYTEA DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payout_link_id VARCHAR(255);
+-- Your SQL goes here
+ALTER TABLE authentication ADD COLUMN IF NOT EXISTS acquirer_country_code VARCHAR(64);
+-- First drop the primary key of payment_intent
+ALTER TABLE payment_intent DROP CONSTRAINT payment_intent_pkey;
+
+-- Create new primary key
+ALTER TABLE payment_intent
+ADD PRIMARY KEY (payment_id, merchant_id);
+
+-- Make the previous primary key as optional
+ALTER TABLE payment_intent
+ALTER COLUMN id DROP NOT NULL;
+
+-- Follow the same steps for payment attempt as well
+ALTER TABLE payment_attempt DROP CONSTRAINT payment_attempt_pkey;
+
+ALTER TABLE payment_attempt
+ADD PRIMARY KEY (attempt_id, merchant_id);
+
+ALTER TABLE payment_attempt
+ALTER COLUMN id DROP NOT NULL;
+-- Your SQL goes here
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS client_secret VARCHAR(128) DEFAULT NULL;
+
+ALTER TYPE "PayoutStatus" ADD VALUE IF NOT EXISTS 'requires_confirmation';
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS priority VARCHAR(32);
+CREATE INDEX connector_payout_id_merchant_id_index ON payout_attempt (connector_payout_id, merchant_id);
+-- Your SQL goes here
+ALTER TABLE users ALTER COLUMN password DROP NOT NULL;
+-- Your SQL goes here
+CREATE TABLE IF NOT EXISTS user_authentication_methods (
+    id VARCHAR(64) PRIMARY KEY,
+    auth_id VARCHAR(64) NOT NULL,
+    owner_id VARCHAR(64) NOT NULL,
+    owner_type VARCHAR(64) NOT NULL,
+    auth_type VARCHAR(64) NOT NULL,
+    private_config bytea,
+    public_config JSONB,
+    allow_signup BOOLEAN NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    last_modified_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS auth_id_index ON user_authentication_methods (auth_id);
+CREATE INDEX IF NOT EXISTS owner_id_index ON user_authentication_methods (owner_id);
+-- Your SQL goes here
+ALTER TABLE payouts ALTER COLUMN payout_type DROP NOT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS customer_details BYTEA DEFAULT NULL;
+ALTER TABLE events ADD COLUMN metadata JSONB DEFAULT NULL;
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS collect_billing_details_from_wallet_connector BOOLEAN DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS billing_details BYTEA DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS merchant_order_reference_id VARCHAR(255) DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS shipping_details BYTEA DEFAULT NULL;
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS outgoing_webhook_custom_http_headers BYTEA DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS customer_acceptance JSONB DEFAULT NULL;
+-- Your SQL goes here
+-- The below query will lock the merchant account table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query is necessary for the application to not use id in update of merchant_account
+-- This query should be run after the new version of application is deployed
+ALTER TABLE merchant_account DROP CONSTRAINT merchant_account_pkey;
+
+-- Use the `merchant_id` column as primary key
+-- This is already a unique, not null column
+-- So this query should not fail for not null or duplicate values reasons
+ALTER TABLE merchant_account
+ADD PRIMARY KEY (merchant_id);
+-- Your SQL goes here
+-- The below query will lock the dispute table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query is necessary for the application to not use id in update of dispute
+-- This query should be run only after the new version of application is deployed
+ALTER TABLE dispute DROP CONSTRAINT dispute_pkey;
+
+-- Use the `dispute_id` column as primary key
+ALTER TABLE dispute
+ADD PRIMARY KEY (dispute_id);
+-- Your SQL goes here
+-- The below query will lock the mandate table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query is necessary for the application to not use id in update of mandate
+-- This query should be run only after the new version of application is deployed
+ALTER TABLE mandate DROP CONSTRAINT mandate_pkey;
+
+-- Use the `mandate_id` column as primary key
+ALTER TABLE mandate
+ADD PRIMARY KEY (mandate_id);
+-- Your SQL goes here
+-- The below query will lock the merchant connector account table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run only after the new version of application is deployed
+ALTER TABLE merchant_connector_account DROP CONSTRAINT merchant_connector_account_pkey;
+
+-- Use the `merchant_connector_id` column as primary key
+-- This is not a unique column, but in an ideal scenario there should not be any duplicate keys as this is being generated by the application
+-- So this query should not fail for not null or duplicate values reasons
+ALTER TABLE merchant_connector_account
+ADD PRIMARY KEY (merchant_connector_id);
+UPDATE generic_link
+SET link_data = jsonb_set(link_data, '{allowed_domains}', '["*"]'::jsonb)
+WHERE
+    NOT link_data ? 'allowed_domains'
+    AND link_type = 'payout_link';
+-- Add a new column for allowed domains and secure link endpoint
+ALTER table payment_link ADD COLUMN IF NOT EXISTS secure_link VARCHAR(255);
+-- Your SQL goes here
+-- The below query will lock the blocklist table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE blocklist DROP CONSTRAINT blocklist_pkey;
+
+-- Use the `merchant_id, fingerprint_id` columns as primary key
+-- These are already unique, not null columns
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE blocklist
+ADD PRIMARY KEY (merchant_id, fingerprint_id);
+-- Your SQL goes here
+ALTER TABLE organization
+ADD COLUMN organization_details jsonb,
+ADD COLUMN metadata jsonb,
+ADD created_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+ADD modified_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP;
+-- Your SQL goes here
+-- The below query will lock the refund table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE refund DROP CONSTRAINT refund_pkey;
+
+-- Use the `merchant_id, refund_id` columns as primary key
+-- These are already unique, not null columns
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE refund
+ADD PRIMARY KEY (merchant_id, refund_id);
+-- Your SQL goes here
+-- The below query will lock the users table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE users DROP CONSTRAINT users_pkey;
+
+-- Use the `user_id` columns as primary key
+-- These are already unique, not null column
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE users
+ADD PRIMARY KEY (user_id);
+-- Your SQL goes here
+-- The below query will lock the user_roles table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE user_roles DROP CONSTRAINT user_roles_pkey;
+
+-- Use the `user_id, merchant_id` columns as primary key
+-- These are already unique, not null columns
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE user_roles
+ADD PRIMARY KEY (user_id, merchant_id);
+-- Your SQL goes here
+-- The below query will lock the user_roles table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE roles DROP CONSTRAINT roles_pkey;
+
+-- Use the `role_id` column as primary key
+-- These are already unique, not null column
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE roles
+ADD PRIMARY KEY (role_id);
+-- Your SQL goes here
+
+CREATE TYPE "ApiVersion" AS ENUM ('v1', 'v2');
+
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS version "ApiVersion" NOT NULL DEFAULT 'v1';
+-- Your SQL goes here
+-- The below query will lock the payment_methods table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE payment_methods DROP CONSTRAINT payment_methods_pkey;
+
+-- Use the `payment_method_id` column as primary key
+-- This is already unique, not null column
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE payment_methods
+ADD PRIMARY KEY (payment_method_id);
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS always_collect_billing_details_from_wallet_connector BOOLEAN DEFAULT FALSE;
+-- Your SQL goes here
+
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS always_collect_shipping_details_from_wallet_connector BOOLEAN DEFAULT FALSE;
+-- Your SQL goes here
+-- The below query will lock the user_roles table
+-- Running this query is not necessary on higher environments
+-- as the application will work fine without these queries being run
+-- This query should be run after the new version of application is deployed
+ALTER TABLE user_roles DROP CONSTRAINT user_roles_pkey;
+-- Use the `id` column as primary key
+-- This is serial and a not null column
+-- So this query should not fail for not null or duplicate value reasons
+ALTER TABLE user_roles ADD PRIMARY KEY (id);
+
+ALTER TABLE user_roles ALTER COLUMN org_id DROP NOT NULL;
+ALTER TABLE user_roles ALTER COLUMN merchant_id DROP NOT NULL;
+
+ALTER TABLE user_roles ADD COLUMN profile_id VARCHAR(64);
+ALTER TABLE user_roles ADD COLUMN entity_id VARCHAR(64);
+ALTER TABLE user_roles ADD COLUMN entity_type VARCHAR(64);
+
+CREATE TYPE "UserRoleVersion" AS ENUM('v1', 'v2');
+ALTER TABLE user_roles ADD COLUMN version "UserRoleVersion" DEFAULT 'v1' NOT NULL;
+-- Your SQL goes here
+ALTER TABLE organization
+ADD COLUMN id VARCHAR(32);
+ALTER TABLE organization
+ADD COLUMN organization_name TEXT;
+      
+-- Your SQL goes here
+ALTER TABLE roles ADD COLUMN entity_type VARCHAR(64);
+ALTER TABLE payouts
+ALTER COLUMN customer_id
+DROP NOT NULL,
+ALTER COLUMN address_id
+DROP NOT NULL;
+
+ALTER TABLE payout_attempt
+ALTER COLUMN customer_id
+DROP NOT NULL,
+ALTER COLUMN address_id
+DROP NOT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_intent
+ADD COLUMN IF NOT EXISTS is_payment_processor_token_flow BOOLEAN;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS shipping_cost BIGINT;
+-- Your SQL goes here
+ALTER TABLE user_roles DROP CONSTRAINT user_merchant_unique;
+-- Your SQL goes here
+ALTER TABLE merchant_account
+ADD COLUMN IF NOT EXISTS version "ApiVersion" NOT NULL DEFAULT 'v1';
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS tax_connector_id VARCHAR(64);
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_tax_connector_enabled BOOLEAN;
+-- Your SQL goes here
+ALTER TABLE merchant_connector_account
+ADD COLUMN IF NOT EXISTS version "ApiVersion" NOT NULL DEFAULT 'v1';
+CREATE TABLE IF NOT EXISTS unified_translations (
+    unified_code VARCHAR(255) NOT NULL,
+    unified_message VARCHAR(1024) NOT NULL,
+    locale VARCHAR(255) NOT NULL ,
+    translation VARCHAR(1024) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+    last_modified_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+    PRIMARY KEY (unified_code,unified_message,locale)
+);
+-- Your SQL goes here
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS profile_id VARCHAR(64) NOT NULL DEFAULT 'default_profile';
+
+-- Add organization_id to payment_attempt table
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS organization_id VARCHAR(32) NOT NULL DEFAULT 'default_org';
+
+-- Add organization_id to payment_intent table
+ALTER TABLE payment_intent
+ADD COLUMN IF NOT EXISTS organization_id VARCHAR(32) NOT NULL DEFAULT 'default_org';
+
+-- Add organization_id to refund table
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS organization_id VARCHAR(32) NOT NULL DEFAULT 'default_org';
+
+-- Add organization_id to dispute table
+ALTER TABLE dispute
+ADD COLUMN IF NOT EXISTS organization_id VARCHAR(32) NOT NULL DEFAULT 'default_org';
+
+-- This doesn't work on V2
+-- The below backfill step has to be run after the code deployment
+-- UPDATE payment_attempt pa
+-- SET organization_id = ma.organization_id
+-- FROM merchant_account ma
+-- WHERE pa.merchant_id = ma.merchant_id;
+
+-- UPDATE payment_intent pi
+-- SET organization_id = ma.organization_id
+-- FROM merchant_account ma
+-- WHERE pi.merchant_id = ma.merchant_id;
+
+-- UPDATE refund r
+-- SET organization_id = ma.organization_id
+-- FROM merchant_account ma
+-- WHERE r.merchant_id = ma.merchant_id;
+
+-- UPDATE payment_attempt pa
+-- SET profile_id = pi.profile_id
+-- FROM payment_intent pi
+-- WHERE pa.payment_id = pi.payment_id
+--   AND pa.merchant_id = pi.merchant_id
+--   AND pi.profile_id IS NOT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS tax_details JSONB;
+-- Your SQL goes here
+
+ALTER TABLE payment_attempt ADD COLUMN card_network VARCHAR(32);
+UPDATE payment_attempt
+SET card_network = (payment_method_data -> 'card' -> 'card_network')::VARCHAR(32);
+-- Your SQL goes here
+ALTER TYPE "ConnectorType"
+ADD VALUE IF NOT EXISTS 'tax_processor';
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS skip_external_tax_calculation BOOLEAN;
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN version "ApiVersion" DEFAULT 'v1' NOT NULL;
+-- Your SQL goes here
+ALTER TABLE users DROP COLUMN preferred_merchant_id;
+-- Your SQL goes here
+ALTER TABLE payment_methods
+ADD COLUMN IF NOT EXISTS version "ApiVersion" NOT NULL DEFAULT 'v1';
+ALTER TABLE payout_attempt
+ADD COLUMN IF NOT EXISTS unified_code VARCHAR(255) DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS unified_message VARCHAR(1024) DEFAULT NULL;
+-- Your SQL goes here
+ALTER TYPE "RoutingAlgorithmKind" ADD VALUE 'dynamic';
+-- Your SQL goes here
+ALTER TABLE
+    business_profile
+ADD
+    COLUMN dynamic_routing_algorithm JSON DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS shipping_cost BIGINT;
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS order_tax_amount BIGINT;
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_network_tokenization_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS network_token_requestor_reference_id VARCHAR(128) DEFAULT NULL;
+
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS network_token_locker_id VARCHAR(64) DEFAULT NULL;
+
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS network_token_payment_method_data BYTEA DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE payout_attempt 
+ADD COLUMN IF NOT EXISTS additional_payout_method_data JSONB DEFAULT NULL;
+-- Your SQL goes here
+UPDATE user_roles SET entity_type = 'merchant' WHERE entity_type = 'internal';
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS connector_transaction_data VARCHAR(512);
+
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS connector_refund_data VARCHAR(512);
+
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS connector_transaction_data VARCHAR(512);
+
+ALTER TABLE captures
+ADD COLUMN IF NOT EXISTS connector_capture_data VARCHAR(512);
+-- Your SQL goes here
+-- Add is_auto_retries_enabled column in business_profile table
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_auto_retries_enabled BOOLEAN;
+
+-- Add max_auto_retries_enabled column in business_profile table
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS max_auto_retries_enabled SMALLINT;
+-- Your SQL goes here
+ALTER TABLE
+    payment_attempt
+ADD
+    COLUMN connector_mandate_detail JSONB DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS profile_id VARCHAR(64);
+-- Your SQL goes here
+ALTER TYPE "RoleScope"
+ADD VALUE IF NOT EXISTS 'profile';
+-- Your SQL goes here
+UPDATE roles SET entity_type = 'merchant' WHERE entity_type IS NULL;
+
+ALTER TABLE roles ALTER COLUMN entity_type SET DEFAULT 'merchant';
+
+ALTER TABLE roles ALTER COLUMN entity_type SET NOT NULL;
+-- Your SQL goes here
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64) NOT NULL DEFAULT 'public';
+-- Your SQL goes here
+ALTER TABLE dispute ADD COLUMN IF NOT EXISTS dispute_currency "Currency";
+-- Your SQL goes here
+CREATE TABLE IF NOT EXISTS themes (
+    theme_id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL,
+    org_id VARCHAR(64),
+    merchant_id VARCHAR(64),
+    profile_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL,
+    last_modified_at TIMESTAMP NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS themes_index ON themes (
+    tenant_id,
+    COALESCE(org_id, '0'),
+    COALESCE(merchant_id, '0'),
+    COALESCE(profile_id, '0')
+);
+-- stores the flag send by the merchant during payments-create call
+ALTER TABLE payment_intent
+ADD COLUMN request_extended_authorization boolean;
+
+
+ALTER TABLE payment_attempt
+-- stores the flag sent to the connector
+ADD COLUMN request_extended_authorization boolean;
+
+ALTER TABLE payment_attempt
+-- Set to true if extended authentication request was successfully processed by the connector
+ADD COLUMN extended_authorization_applied boolean;
+
+
+ALTER TABLE payment_attempt
+-- stores the flag sent to the connector
+ADD COLUMN capture_before timestamp;
+
+ALTER TABLE business_profile
+-- merchant can configure the default value for request_extended_authorization here
+ADD COLUMN always_request_extended_authorization boolean;
+-- Your SQL goes here
+CREATE TABLE IF NOT EXISTS callback_mapper (
+    id VARCHAR(128) NOT NULL,
+    type VARCHAR(64) NOT NULL,
+    data JSONB NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    last_modified_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (id, type)
+);
+CREATE TYPE "ScaExemptionType" AS ENUM (
+    'low_value',
+    'transaction_risk_analysis'
+);
+
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS psd2_sca_exemption_type "ScaExemptionType";
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_enum 
+        WHERE enumlabel = 'sequential_automatic' 
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'CaptureMethod')
+    ) THEN
+        ALTER TYPE "CaptureMethod" ADD VALUE 'sequential_automatic' AFTER 'manual';
+    END IF;
+END $$;
+-- Your SQL goes here
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS entity_type VARCHAR(64) NOT NULL;
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS theme_name VARCHAR(64) NOT NULL;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS split_payments jsonb;
+-- Your SQL goes here
+ALTER TABLE gateway_status_map ADD COLUMN error_category VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE refund ADD COLUMN IF NOT EXISTS split_refunds jsonb;
+--- Your SQL goes here
+CREATE TYPE "SuccessBasedRoutingConclusiveState" AS ENUM(
+  'true_positive',
+  'false_positive',
+  'true_negative',
+  'false_negative'
+);
+
+CREATE TABLE IF NOT EXISTS dynamic_routing_stats (
+    payment_id VARCHAR(64) NOT NULL,
+    attempt_id VARCHAR(64) NOT NULL,
+    merchant_id VARCHAR(64) NOT NULL,
+    profile_id VARCHAR(64) NOT NULL,
+    amount BIGINT NOT NULL,
+    success_based_routing_connector VARCHAR(64) NOT NULL,
+    payment_connector VARCHAR(64) NOT NULL,
+    currency "Currency",
+    payment_method VARCHAR(64),
+    capture_method "CaptureMethod",
+    authentication_type "AuthenticationType",
+    payment_status "AttemptStatus" NOT NULL,
+    conclusive_classification "SuccessBasedRoutingConclusiveState" NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    PRIMARY KEY(attempt_id, merchant_id)
+);
+CREATE INDEX profile_id_index ON dynamic_routing_stats (profile_id);
+-- Your SQL goes here
+-- Incomplete migration, also run migrations/2024-12-13-080558_entity-id-backfill-for-user-roles
+UPDATE user_roles
+SET
+    entity_type = CASE
+        WHEN role_id = 'org_admin' THEN 'organization'
+        ELSE 'merchant'
+    END
+WHERE
+    version = 'v1'
+    AND entity_type IS NULL;
+-- Your SQL goes here
+ALTER TABLE merchant_account ADD COLUMN IF NOT EXISTS is_platform_account BOOL NOT NULL DEFAULT FALSE;
+
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS platform_merchant_id VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_click_to_pay_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE authentication
+ADD COLUMN IF NOT EXISTS service_details JSONB
+DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS email_primary_color VARCHAR(64) NOT NULL DEFAULT '#006DF9';
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS email_foreground_color VARCHAR(64) NOT NULL DEFAULT '#000000';
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS email_background_color VARCHAR(64) NOT NULL DEFAULT '#FFFFFF';
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS email_entity_name VARCHAR(64) NOT NULL DEFAULT 'Hyperswitch';
+ALTER TABLE themes ADD COLUMN IF NOT EXISTS email_entity_logo_url TEXT NOT NULL DEFAULT 'https://app.hyperswitch.io/email-assets/HyperswitchLogo.png';
+-- Your SQL goes here
+ALTER TABLE gateway_status_map ADD COLUMN IF NOT EXISTS clear_pan_possible BOOLEAN NOT NULL DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE user_authentication_methods ADD COLUMN email_domain VARCHAR(64);
+UPDATE user_authentication_methods SET email_domain = auth_id WHERE email_domain IS NULL;
+ALTER TABLE user_authentication_methods ALTER COLUMN email_domain SET NOT NULL;
+
+CREATE INDEX email_domain_index ON user_authentication_methods (email_domain);
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS authentication_product_ids JSONB NULL;
+-- Your SQL goes here
+UPDATE user_roles
+SET
+    entity_id = CASE
+        WHEN role_id = 'org_admin' THEN org_id
+        ELSE merchant_id
+    END
+WHERE
+    version = 'v1'
+    AND entity_id IS NULL;
+-- Your SQL goes here
+ALTER TABLE dynamic_routing_stats
+ADD COLUMN IF NOT EXISTS payment_method_type VARCHAR(64);
+-- Your SQL goes here
+CREATE TYPE "RelayStatus" AS ENUM ('created', 'pending', 'failure', 'success');
+
+CREATE TYPE "RelayType" AS ENUM ('refund');
+
+CREATE TABLE relay (
+    id VARCHAR(64) PRIMARY KEY,
+    connector_resource_id VARCHAR(128) NOT NULL,
+    connector_id VARCHAR(64) NOT NULL,
+    profile_id VARCHAR(64) NOT NULL,
+    merchant_id VARCHAR(64) NOT NULL,
+    relay_type "RelayType" NOT NULL,
+    request_data JSONB DEFAULT NULL,
+    status "RelayStatus" NOT NULL,
+    connector_reference_id VARCHAR(128),
+    error_code VARCHAR(64),
+    error_message TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+    modified_at TIMESTAMP NOT NULL DEFAULT now()::TIMESTAMP,
+    response_data JSONB DEFAULT NULL
+);
+
+-- Your SQL goes here
+
+DROP INDEX IF EXISTS role_name_org_id_org_scope_index;
+
+DROP INDEX IF EXISTS role_name_merchant_id_merchant_scope_index;
+
+DROP INDEX IF EXISTS roles_merchant_org_index;
+
+CREATE INDEX roles_merchant_org_index ON roles (
+    org_id,
+    merchant_id,
+    profile_id
+);
+-- Your SQL goes here
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_enum 
+        WHERE enumlabel = 'non_deterministic'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'SuccessBasedRoutingConclusiveState')
+    ) THEN
+        ALTER TYPE "SuccessBasedRoutingConclusiveState" ADD VALUE 'non_deterministic';
+    END IF;
+END $$;
+-- Your SQL goes here
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS unified_code VARCHAR(255) DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS unified_message VARCHAR(1024) DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64) NOT NULL DEFAULT 'public';
+DO $$
+  DECLARE currency TEXT;
+  BEGIN
+    FOR currency IN
+      SELECT
+        unnest(
+          ARRAY ['AFN', 'BTN', 'CDF', 'ERN', 'IRR', 'ISK', 'KPW', 'SDG', 'SYP', 'TJS', 'TMT', 'ZWL']
+        ) AS currency
+      LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumlabel = currency
+              AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'Currency')
+          ) THEN EXECUTE format('ALTER TYPE "Currency" ADD VALUE %L', currency);
+        END IF;
+      END LOOP;
+END $$;
+UPDATE roles
+SET groups = array_replace(groups, 'recon_ops', 'recon_ops_manage')
+WHERE 'recon_ops' = ANY(groups);
+-- Your SQL goes here
+ALTER TABLE dynamic_routing_stats
+ADD COLUMN IF NOT EXISTS global_success_based_connector VARCHAR(64);
+-- Your SQL goes here
+CREATE UNIQUE INDEX relay_profile_id_connector_reference_id_index ON relay (profile_id, connector_reference_id);
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS processor_transaction_data TEXT;
+
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS processor_refund_data TEXT;
+
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS processor_transaction_data TEXT;
+
+ALTER TABLE captures
+ADD COLUMN IF NOT EXISTS processor_capture_data TEXT;
+-- Your SQL goes here
+CREATE TYPE "CardDiscovery" AS ENUM ('manual', 'saved_card', 'click_to_pay');
+
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS card_discovery "CardDiscovery";
+ALTER TABLE payment_attempt
+ADD COLUMN charges JSONB
+DEFAULT NULL;
+-- Your SQL goes here
+
+ALTER TABLE business_profile
+ADD COLUMN card_testing_guard_config JSONB
+DEFAULT NULL;
+
+ALTER TABLE business_profile 
+ADD COLUMN card_testing_secret_key BYTEA
+DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE authentication
+    ADD COLUMN IF NOT EXISTS organization_id VARCHAR(32) NOT NULL DEFAULT 'default_org';
+-- This file contains queries to re-create the `id` column as a `VARCHAR` column instead of `SERIAL` column for tables that already have it.
+-- It must be ensured that the deployed version of the application does not include the `id` column in any of its queries.
+-- Drop the id column as this will be used later as the primary key with a different type
+------------------------ Merchant Account -----------------------
+ALTER TABLE merchant_account DROP COLUMN IF EXISTS id;
+
+------------------------ Merchant Connector Account -----------------------
+ALTER TABLE merchant_connector_account DROP COLUMN IF EXISTS id;
+
+
+------------------------ Customers -----------------------
+ALTER TABLE customers DROP COLUMN IF EXISTS id;
+
+
+
+------------------------ Payment Intent -----------------------
+ALTER TABLE payment_intent DROP COLUMN id;
+
+
+------------------------ Payment Attempt -----------------------
+ALTER TABLE payment_attempt DROP COLUMN id;
+
+
+------------------------ Payment Methods -----------------------
+ALTER TABLE payment_methods DROP COLUMN IF EXISTS id;
+
+------------------------ Address -----------------------
+ALTER TABLE address DROP COLUMN IF EXISTS id;
+
+------------------------ Dispute -----------------------
+ALTER TABLE dispute DROP COLUMN IF EXISTS id;
+
+------------------------ Mandate -----------------------
+ALTER TABLE mandate DROP COLUMN IF EXISTS id;
+
+------------------------ Refund -----------------------
+ALTER TABLE refund DROP COLUMN IF EXISTS id;
+
+------------------------ BlockList -----------------------
+ALTER TABLE blocklist DROP COLUMN IF EXISTS id;
+
+------------------------ Roles -----------------------
+ALTER TABLE roles DROP COLUMN IF EXISTS id;
+
+------------------------ Users -----------------------
+ALTER TABLE users DROP COLUMN IF EXISTS id;
+
+-- Your SQL goes here
+ALTER TABLE roles ALTER COLUMN merchant_id DROP NOT NULL;
+-- Your SQL goes here
+ALTER TABLE merchant_account
+ADD COLUMN IF NOT EXISTS id VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE merchant_account
+ADD COLUMN IF NOT EXISTS product_type VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE
+    process_tracker
+ADD
+    COLUMN IF NOT EXISTS version "ApiVersion" NOT NULL DEFAULT 'v1';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_overall_delivery_successful BOOLEAN;
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_clear_pan_retries_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE organization
+ADD COLUMN IF NOT EXISTS version "ApiVersion" NOT NULL DEFAULT 'v1';
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS force_3ds_challenge boolean DEFAULT false;
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS issuer_error_code VARCHAR(64) DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS issuer_error_message TEXT DEFAULT NULL;
+
+ALTER TABLE refund
+ADD COLUMN IF NOT EXISTS issuer_error_code VARCHAR(64) DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS issuer_error_message TEXT DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS is_debit_routing_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+-- Your SQL goes here
+ALTER TABLE payment_intent
+ADD COLUMN IF NOT EXISTS force_3ds_challenge boolean DEFAULT false;
+-- Your SQL goes here
+ALTER TABLE payment_intent
+ADD COLUMN IF NOT EXISTS force_3ds_challenge_trigger boolean DEFAULT false;
+-- Your SQL goes here
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS processor_merchant_id VARCHAR(64);
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS processor_merchant_id VARCHAR(64);
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+-- This backfill should be executed again after deployment.
+UPDATE payment_intent SET processor_merchant_id = merchant_id where processor_merchant_id IS NULL;
+UPDATE payment_attempt SET processor_merchant_id = merchant_id where processor_merchant_id IS NULL;
+-- Your SQL goes here
+ALTER TYPE "DashboardMetadata"
+ADD VALUE IF NOT EXISTS 'recon_status';
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN IF NOT EXISTS merchant_business_country "CountryAlpha2" DEFAULT NULL;
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN id VARCHAR(64);
+
+ALTER TABLE merchant_connector_account
+ADD COLUMN id VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE gateway_status_map
+ADD COLUMN IF NOT EXISTS feature_data JSONB DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS feature VARCHAR(64) DEFAULT NULL;
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS setup_future_usage_applied "FutureUsage";
+-- Your SQL goes here
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS organization_type VARCHAR(64);
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS platform_merchant_id VARCHAR(64);
+
+ALTER TABLE merchant_account ADD COLUMN IF NOT EXISTS merchant_account_type VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE users ADD COLUMN IF NOT EXISTS lineage_context JSONB;
+-- Your SQL goes here
+
+ALTER TABLE business_profile 
+ADD COLUMN is_iframe_redirection_enabled BOOLEAN ;
+-- Your SQL goes here
+-- Your SQL goes here
+
+ALTER TABLE payment_intent 
+ADD COLUMN is_iframe_redirection_enabled BOOLEAN;
+-- Your SQL goes here
+ALTER TYPE "ConnectorType"
+ADD VALUE IF NOT EXISTS 'vault_processor';
+-- Your SQL goes here
+ALTER TABLE routing_algorithm
+ADD COLUMN decision_engine_routing_id VARCHAR(64);
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS is_pre_network_tokenization_enabled BOOLEAN;
+-- Your SQL goes here
+
+ALTER TABLE authentication
+    ALTER COLUMN authentication_connector DROP NOT NULL,
+    ALTER COLUMN merchant_connector_id DROP NOT NULL,
+    ADD COLUMN IF NOT EXISTS authentication_client_secret VARCHAR(128) NULL,
+    ADD COLUMN IF NOT EXISTS force_3ds_challenge BOOLEAN NULL,
+    ADD COLUMN IF NOT EXISTS psd2_sca_exemption_type "ScaExemptionType" NULL,
+    ADD COLUMN IF NOT EXISTS return_url VARCHAR(2048) NULL,
+    ADD COLUMN IF NOT EXISTS amount BIGINT,
+    ADD COLUMN IF NOT EXISTS currency "Currency";
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN three_ds_decision_rule_algorithm JSONB;
+ALTER TYPE "AttemptStatus" ADD VALUE 'integrity_failure';
+ALTER TYPE "IntentStatus" ADD VALUE 'conflicted';
+-- Your SQL goes here
+ALTER TYPE "RoutingAlgorithmKind" ADD VALUE 'three_ds_decision_rule';
+-- Your SQL goes here
+ALTER TYPE "TransactionType" ADD VALUE 'three_ds_authentication';
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS extended_return_url VARCHAR(2048);
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS acquirer_config_map JSONB;
+-- Your SQL goes here
+ALTER TABLE business_profile
+ADD COLUMN merchant_category_code VARCHAR(16) DEFAULT NULL;
+-- Your SQL goes here
+CREATE TYPE "RoutingApproach" AS ENUM (
+  'success_rate_exploitation',
+  'success_rate_exploration',
+  'contract_based_routing',
+  'debit_routing',
+  'rule_based_routing',
+  'volume_based_routing',
+  'default_fallback'
+);
+
+
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS routing_approach "RoutingApproach";
+
+ALTER TABLE payout_attempt DROP CONSTRAINT payout_attempt_pkey;
+ALTER TABLE payout_attempt ADD PRIMARY KEY (merchant_id, payout_attempt_id);
+
+ALTER TABLE payouts DROP CONSTRAINT payouts_pkey;
+ALTER TABLE payouts ADD PRIMARY KEY (merchant_id, payout_id);
+
+ALTER TABLE payout_attempt ADD COLUMN merchant_order_reference_id VARCHAR(255) NULL;
+-- Your SQL goes here
+ALTER TABLE authentication 
+ADD COLUMN IF NOT EXISTS billing_address BYTEA,
+ADD COLUMN IF NOT EXISTS shipping_address BYTEA,
+ADD COLUMN IF NOT EXISTS browser_info JSONB,
+ADD COLUMN IF NOT EXISTS email BYTEA,
+ADD COLUMN IF NOT EXISTS amount bigint,
+ADD COLUMN IF NOT EXISTS currency "Currency",
+ADD COLUMN IF NOT EXISTS profile_acquirer_id VARCHAR(128) NULL;
+-- Your SQL goes here
+ALTER TYPE "RoutingApproach"
+ADD VALUE 'straight_through_routing';
+-- Your SQL goes here
+ALTER TABLE payment_intent
+ADD COLUMN IF NOT EXISTS is_payment_id_from_merchant boolean;
+
+ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS connector_request_reference_id VARCHAR(255);
+-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS merchant_country_code Varchar(32);
+
+
 ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS dispute_polling_interval INTEGER;
 ALTER TYPE "DisputeStage" ADD VALUE 'arbitration';
 AlTER TYPE "DisputeStage" ADD VALUE 'dispute_reversal';
-
+-- Your SQL goes here
 CREATE TABLE hyperswitch_ai_interaction (
     id VARCHAR(64) NOT NULL,
     session_id VARCHAR(64),
@@ -4071,6 +5243,50 @@ CREATE TABLE hyperswitch_ai_interaction (
 CREATE TABLE hyperswitch_ai_interaction_default
     PARTITION OF hyperswitch_ai_interaction DEFAULT;
 
+ALTER TABLE mandate
+ADD COLUMN
+IF NOT EXISTS customer_user_agent_extended VARCHAR
+(2048);
+ALTER TYPE "IntentStatus" ADD VALUE IF NOT EXISTS 'expired';
+
+ALTER TYPE "AttemptStatus" ADD VALUE IF NOT EXISTS 'expired';
+
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payment_expired';
+ALTER TABLE authentication
+    ADD COLUMN challenge_code VARCHAR NULL,
+    ADD COLUMN challenge_cancel VARCHAR NULL,
+    ADD COLUMN challenge_code_reason VARCHAR NULL,
+    ADD COLUMN message_extension JSONB NULL;
+ALTER TABLE payment_intent ADD COLUMN IF NOT EXISTS payment_channel VARCHAR(64) DEFAULT NULL;
+-- Your SQL goes here
+
+ALTER TABLE payment_intent
+ADD COLUMN IF NOT EXISTS tax_status VARCHAR ,
+ADD COLUMN IF NOT EXISTS discount_amount BIGINT,
+ADD COLUMN IF NOT EXISTS shipping_amount_tax BIGINT,
+ADD COLUMN IF NOT EXISTS duty_amount BIGINT,
+ADD COLUMN IF NOT EXISTS order_date TIMESTAMP;
+ALTER TABLE customers
+ADD COLUMN
+IF NOT EXISTS tax_registration_id BYTEA DEFAULT NULL;
+-- Add origin_zip column to address table
+ALTER TABLE address
+ADD COLUMN  IF NOT EXISTS origin_zip BYTEA;
+ALTER TABLE payment_intent ADD COLUMN enable_partial_authorization BOOLEAN;
+-- Your SQL goes here
+ALTER TYPE "IntentStatus" ADD VALUE IF NOT EXISTS 'partially_authorized_and_requires_capture';
+
+ALTER TYPE "AttemptStatus" ADD VALUE IF NOT EXISTS 'partially_authorized';
+
+ALTER TYPE "EventType" ADD VALUE 'payment_partially_authorized';
+-- Your SQL goes here
+ALTER TYPE "IntentStatus" ADD VALUE IF NOT EXISTS 'cancelled_post_capture';
+
+ALTER TYPE "AttemptStatus" ADD VALUE IF NOT EXISTS 'voided_post_charge';
+
+ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'payment_cancelled_post_capture';
+ALTER TABLE payment_attempt
+ADD COLUMN IF NOT EXISTS network_transaction_id VARCHAR(255) NULL;
 CREATE TABLE subscription (
   id SERIAL PRIMARY KEY,
   subscription_id VARCHAR(128) NOT NULL,
@@ -4090,7 +5306,8 @@ CREATE TABLE subscription (
 CREATE UNIQUE INDEX merchant_subscription_unique_index ON subscription (merchant_id, subscription_id);
 -- Your SQL goes here
 ALTER TABLE business_profile
-ADD COLUMN IF NOT EXISTS is_manual_retry_enabled BOOLEAN;DROP INDEX IF EXISTS merchant_subscription_unique_index;
+ADD COLUMN IF NOT EXISTS is_manual_retry_enabled BOOLEAN;
+DROP INDEX IF EXISTS merchant_subscription_unique_index;
 
 ALTER TABLE subscription
     DROP CONSTRAINT IF EXISTS subscription_pkey,
@@ -4106,7 +5323,8 @@ ALTER TABLE business_profile
 ADD COLUMN always_enable_overcapture BOOLEAN;
 
 ALTER TABLE payment_attempt
-ADD COLUMN is_overcapture_enabled BOOLEAN;ALTER TABLE payment_attempt ADD COLUMN network_details JSONB;
+ADD COLUMN is_overcapture_enabled BOOLEAN;
+ALTER TABLE payment_attempt ADD COLUMN network_details JSONB;
 CREATE TABLE invoice (
     id VARCHAR(64) PRIMARY KEY,
     subscription_id VARCHAR(128) NOT NULL,
@@ -4138,7 +5356,8 @@ ALTER TABLE subscription
 ALTER TABLE subscription
     ADD PRIMARY KEY (id);
 -- Your SQL goes here
-ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS billing_processor_id VARCHAR(64);-- Your SQL goes here
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS billing_processor_id VARCHAR(64);
+-- Your SQL goes here
 ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS external_vault_source VARCHAR(64);
 
 ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS vault_type VARCHAR(64);
@@ -4148,20 +5367,26 @@ ALTER TABLE business_profile
 ADD COLUMN IF NOT EXISTS is_external_vault_enabled BOOLEAN;
 
 ALTER TABLE business_profile 
-ADD COLUMN IF NOT EXISTS external_vault_connector_details JSONB;-- Your SQL goes here
+ADD COLUMN IF NOT EXISTS external_vault_connector_details JSONB;
+-- Your SQL goes here
 ALTER TABLE payment_attempt ADD COLUMN IF NOT EXISTS is_stored_credential BOOLEAN;
 -- Your SQL goes here
 ALTER TYPE "ConnectorType"
-ADD VALUE 'billing_processor';-- Add mit_category to payment_intent table
+ADD VALUE 'billing_processor';
+-- Add mit_category to payment_intent table
 ALTER TABLE payment_intent
 ADD COLUMN IF NOT EXISTS mit_category VARCHAR(64);
 -- Your SQL goes here
 ALTER TABLE payment_attempt
-ADD COLUMN IF NOT EXISTS authorized_amount BIGINT;-- Your SQL goes here
-ALTER TYPE "PayoutType" ADD VALUE IF NOT EXISTS 'bank_redirect';-- Your SQL goes here
+ADD COLUMN IF NOT EXISTS authorized_amount BIGINT;
+-- Your SQL goes here
+ALTER TYPE "PayoutType" ADD VALUE IF NOT EXISTS 'bank_redirect';
+-- Your SQL goes here
 ALTER TABLE invoice ADD COLUMN IF NOT EXISTS connector_invoice_id VARCHAR(64);
-CREATE INDEX invoice_subscription_id_connector_invoice_id_index ON invoice (subscription_id, connector_invoice_id);-- Your SQL goes here
+CREATE INDEX invoice_subscription_id_connector_invoice_id_index ON invoice (subscription_id, connector_invoice_id);
+-- Your SQL goes here
 ALTER TABLE subscription
 ADD COLUMN IF NOT EXISTS plan_id VARCHAR(128),
-ADD COLUMN IF NOT EXISTS item_price_id VARCHAR(128);-- Your SQL goes here
+ADD COLUMN IF NOT EXISTS item_price_id VARCHAR(128);
+-- Your SQL goes here
 ALTER TABLE invoice ADD CONSTRAINT invoice_subscription_id_connector_invoice_id_unique_index UNIQUE (subscription_id, connector_invoice_id);

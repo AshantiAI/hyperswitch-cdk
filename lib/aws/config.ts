@@ -60,11 +60,24 @@ export type RDSConfig = {
     writer_instance_size: ec2.InstanceSize;
     reader_instance_class: ec2.InstanceClass;
     reader_instance_size: ec2.InstanceSize;
+    /**
+     * Subnet type for RDS deployment
+     * IMPORTANT: PUBLIC subnets are for cost-saving purposes only (no NAT Gateway)
+     * For production, use PRIVATE_WITH_EGRESS or PRIVATE_ISOLATED
+     */
+    subnetType?: ec2.SubnetType;
+    /**
+     * Whether RDS instance should be publicly accessible
+     * Required when Lambda in public subnets needs to connect without NAT Gateway
+     * Default: true for PUBLIC subnets, false for PRIVATE subnets
+     */
+    publiclyAccessible?: boolean;
 };
 
 export type EC2 = {
     id: string;
     admin_api_key: string;
+    jwt_secret: string;
     master_enc_key: string;
     redis_host: string;
     db_host: string;
@@ -83,6 +96,13 @@ export type Tags = {
     [key: string]: string;
 };
 
+export type VersionsConfig = {
+    hyperswitch_web: string;
+    hyperswitch_sdk: string;
+    hyperswitch_router: string;
+    control_center: string;
+};
+
 export type Config = {
     stack: StackConfig;
     locker: LockerConfig;
@@ -93,11 +113,13 @@ export type Config = {
     hyperswitch_ec2: EC2;
     rds: RDSConfig;
     tags: Tags;
+    versions: VersionsConfig;
 };
 
 export type ImageBuilderConfig = {
     name: string;
     ami_id: string;
+    vpc: VpcConfig;
 }
 
 export type EC2Config = {
@@ -106,7 +128,7 @@ export type EC2Config = {
     instanceType: ec2.InstanceType;
     vpcSubnets: ec2.SubnetSelection;
     securityGroup?: ec2.SecurityGroup;
-    keyPair?: ec2.CfnKeyPair;
+    keyPair?: ec2.IKeyPair;
     userData?: ec2.UserData;
     ssmSessionPermissions?: boolean;
     associatePublicIpAddress?: boolean;

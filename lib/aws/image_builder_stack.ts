@@ -4,14 +4,12 @@ import * as iam from "aws-cdk-lib/aws-iam";
 
 import { Function, Runtime, Code } from "aws-cdk-lib/aws-lambda";
 import { LambdaSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
-import { Vpc } from './networking';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { Construct } from "constructs";
-import { ImageBuilderConfig, VpcConfig } from "./config";
-import { aws_logs as logs } from 'aws-cdk-lib';
+import { ImageBuilderConfig } from "./config";
 import { MachineImage, SubnetType, SecurityGroup } from 'aws-cdk-lib/aws-ec2';
-
 import { readFileSync } from "fs";
+import { ImportedVpc } from "./constructs/imported-vpc";
 
 type ImageBuilderProperties = {
     pipeline_name: string;
@@ -81,26 +79,34 @@ function CreateImagePipeline(
 
 }
 
-export class ImageBuilderStack extends cdk.Stack {
-    constructor(scope: Construct, config: ImageBuilderConfig) {
-        super(scope, config.name, {
-            stackName: config.name,
-        });
+export interface ImageBuilderStackProps extends cdk.StackProps {
+    config: ImageBuilderConfig;
+}
 
-        let vpcConfig: VpcConfig = {
-            name: "imagebuilder-vpc",
-            maxAzs: 2,
-        };
+export class ImageBuilderStack extends cdk.Stack {
+
+    constructor(scope: Construct, id: string, props: ImageBuilderStackProps) {
+        super(scope, id, props);
+
+        const { config } = props;
 
         const envoy_channel = new Topic(this, 'ImgBuilderNotificationTopicEnvoy', {});
         const squid_channel = new Topic(this, 'ImgBuilderNotificationTopicSquid', {});
         const base_channel = new Topic(this, 'ImgBuilderNotificationTopicBase', {});
 
-        let vpc = new Vpc(this, vpcConfig);
+        let vpc = ImportedVpc.FromSSM(this, {
+            maxAzs: config.vpc.maxAzs,
+            includePrivateSubnets: false,
+            includePrivateSubnetRouteTables: false,
+            includePrivateSubnetCidrs: false,
+            includeIsolatedSubnets: false,
+            includeIsolatedSubnetRouteTables: false,
+            includeIsolatedSubnetCidrs: false
+        });
 
-        let subnetId = vpc.vpc.selectSubnets({ subnetType: SubnetType.PUBLIC }).subnetIds[0];
+        let subnetId = vpc.selectSubnets({ subnetType: SubnetType.PUBLIC }).subnetIds[0];
         let ib_SG = new SecurityGroup(this, 'image-server-sg', {
-            vpc: vpc.vpc,
+            vpc: vpc,
             allowAllOutbound: true,
             description: 'security group for a image builder server',
         });
@@ -110,7 +116,7 @@ export class ImageBuilderStack extends cdk.Stack {
         role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"))
         role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName("EC2InstanceProfileForImageBuilder"))
 
-        const base_image_id = config.ami_id || MachineImage.latestAmazonLinux2023().getImage(this).imageId 
+        const base_image_id = config.ami_id || MachineImage.latestAmazonLinux2023().getImage(this).imageId
 
         let squid_properties = {
             pipeline_name: "SquidImagePipeline",

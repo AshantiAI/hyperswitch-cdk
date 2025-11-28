@@ -1,0 +1,15 @@
+# Ignore unnecessary files during Docker build
+*.md
+*.pyc
+__pycache__
+.git
+.gitignore
+*.zip
+v1.119.0/
+migration_runner.zip
+index_improved.py
+lambda_handler.py
+node_modules
+dist
+*.log
+.DS_Store
